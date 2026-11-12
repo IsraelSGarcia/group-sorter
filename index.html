@@ -1348,6 +1348,16 @@
 
         // --- Import / Export & Schema v2 ---
 
+        function parseJsonPreservingNumbers(jsonStr) {
+            return JSON.parse(jsonStr, (key, value, context) => {
+                if (context && context.source !== undefined && typeof value === 'number') {
+                    if (key === 'version') return value;
+                    return context.source.trim();
+                }
+                return value;
+            });
+        }
+
         function serializeDataset() {
             return {
                 version: 2,
@@ -1356,13 +1366,31 @@
                     isReverse: isReverse
                 },
                 groupConfigs: groupConfigs,
-                items: items.map(item => ({
-                    id: item.id || generateId('char'),
-                    name: item.name || item.Name || '',
-                    createdAt: item.createdAt || item._createdAt || item._created || new Date().toISOString(),
-                    updatedAt: item.updatedAt || item._updatedAt || item._modified || item.createdAt || new Date().toISOString(),
-                    attributes: item.attributes || {}
-                }))
+                items: items.map(item => {
+                    const formattedAttributes = {};
+                    if (item.attributes) {
+                        for (const [k, v] of Object.entries(item.attributes)) {
+                            if (typeof v === 'string') {
+                                const trimmed = v.trim();
+                                const isNumericLiteral = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(trimmed);
+                                if (isNumericLiteral && typeof JSON.rawJSON === 'function') {
+                                    try {
+                                        formattedAttributes[k] = JSON.rawJSON(trimmed);
+                                        continue;
+                                    } catch (e) {}
+                                }
+                            }
+                            formattedAttributes[k] = v;
+                        }
+                    }
+                    return {
+                        id: item.id || generateId('char'),
+                        name: item.name || item.Name || '',
+                        createdAt: item.createdAt || item._createdAt || item._created || new Date().toISOString(),
+                        updatedAt: item.updatedAt || item._updatedAt || item._modified || item.createdAt || new Date().toISOString(),
+                        attributes: formattedAttributes
+                    };
+                })
             };
         }
 
@@ -1465,7 +1493,7 @@
             const reader = new FileReader();
             reader.onload = function(e) {
                 try {
-                    const data = JSON.parse(e.target.result);
+                    const data = parseJsonPreservingNumbers(e.target.result);
                     applyImportedData(data);
                 } catch (err) { alert("Error parsing JSON."); }
                 input.value = '';
@@ -1475,9 +1503,10 @@
 
         async function loadExample() {
             try {
-                const res = await fetch('./data/sample-template.json?v=20261112T045500Z', { cache: 'no-cache' });
+                const res = await fetch('./data/sample-template.json?v=20261112T104500Z', { cache: 'no-cache' });
                 if (res.ok) {
-                    const data = await res.json();
+                    const text = await res.text();
+                    const data = parseJsonPreservingNumbers(text);
                     applyImportedData(data);
                     return;
                 }
@@ -1587,7 +1616,8 @@
             try {
                 const res = await fetch(`./groups/${encodeURIComponent(filename)}`, { cache: 'no-cache' });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const data = await res.json();
+                const text = await res.text();
+                const data = parseJsonPreservingNumbers(text);
                 applyImportedData(data);
             } catch (err) {
                 console.error("Failed to load group file:", err);
@@ -1618,12 +1648,16 @@
             try {
                 if (saveBtn) saveBtn.textContent = 'Saving...';
 
+                const dataset = serializeDataset();
+                const content = JSON.stringify(dataset, null, 2);
+
                 const res = await fetch('/api/save', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         filename: filename,
-                        data: serializeDataset()
+                        content: content,
+                        data: dataset
                     })
                 });
 

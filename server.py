@@ -78,9 +78,16 @@ class GroupSorterHandler(http.server.SimpleHTTPRequestHandler):
                     os.makedirs(GROUPS_DIR, exist_ok=True)
 
                 filepath = os.path.join(GROUPS_DIR, filename)
-                with open(filepath, "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=2, ensure_ascii=False)
-                    f.write("\n")
+                content = payload.get("content")
+                if content:
+                    with open(filepath, "w", encoding="utf-8") as f:
+                        f.write(content)
+                        if not content.endswith("\n"):
+                            f.write("\n")
+                else:
+                    with open(filepath, "w", encoding="utf-8") as f:
+                        json.dump(data, f, indent=2, ensure_ascii=False)
+                        f.write("\n")
 
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
