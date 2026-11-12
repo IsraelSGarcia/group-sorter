@@ -123,10 +123,18 @@
             background-position: right 0 center;
         }
 
-        /* Fix for white background in dropdowns on some browsers */
+        /* Fix for dropdowns on dark theme */
         select option {
             background-color: var(--panel-bg);
             color: var(--text-primary);
+        }
+
+        select optgroup {
+            background-color: var(--panel-bg);
+            color: var(--text-secondary);
+            font-style: normal;
+            font-weight: 600;
+            font-size: 11px;
         }
 
         /* Buttons */
@@ -410,6 +418,30 @@
             font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
             font-variant-numeric: tabular-nums; /* Helps align numbers */
         }
+
+        .category-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 1px 6px;
+            font-size: 10px;
+            font-weight: 500;
+            color: #d8e8fc;
+            background-color: rgba(43, 125, 233, 0.18);
+            border: 1px solid rgba(43, 125, 233, 0.4);
+            border-radius: 3px;
+            max-width: 140px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            vertical-align: middle;
+        }
+
+        .category-pill.unspecified {
+            color: var(--text-secondary);
+            background-color: rgba(255, 255, 255, 0.04);
+            border-color: var(--border);
+            font-style: italic;
+        }
         
         .item-actions {
             display: flex;
@@ -538,11 +570,13 @@
             <h3>Sorting</h3>
             <div class="sorting-area">
                 <div style="flex-grow:1">
-                    <label>Sort Leaves By</label>
+                    <label>Sort Items By</label>
                     <select id="sortSelect" onchange="changeSort()">
-                        <option value="Creation Date">Creation Date</option>
-                        <option value="Modification Date">Modification Date</option>
-                        <option value="Alphabetical">Alphabetical</option>
+                        <optgroup label="Standard">
+                            <option value="Creation Date">Creation Date</option>
+                            <option value="Modification Date">Modification Date</option>
+                            <option value="Alphabetical">Alphabetical</option>
+                        </optgroup>
                     </select>
                 </div>
                 <button id="sortOrderBtn" class="secondary" onclick="toggleSortOrder()" title="Toggle Order" style="padding: 6px 10px;">▼</button>
@@ -846,6 +880,62 @@
             renderTree();
         }
 
+        function updateSortSelectOptions() {
+            const select = document.getElementById('sortSelect');
+            if (!select) return;
+
+            const previousSelection = currentSort;
+
+            const categoriesSet = new Set();
+            groupConfigs.forEach(g => {
+                if (g.name && !SYSTEM_KEYS.includes(g.name)) {
+                    categoriesSet.add(g.name);
+                }
+            });
+            items.forEach(item => {
+                if (item.attributes) {
+                    Object.keys(item.attributes).forEach(k => {
+                        if (!SYSTEM_KEYS.includes(k)) categoriesSet.add(k);
+                    });
+                } else {
+                    Object.keys(item).forEach(k => {
+                        if (!SYSTEM_KEYS.includes(k) && !k.startsWith('_') && k !== 'Name' && k !== 'name' && k !== 'id') {
+                            categoriesSet.add(k);
+                        }
+                    });
+                }
+            });
+
+            const sortedCategories = Array.from(categoriesSet).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+            let html = `
+                <optgroup label="Standard">
+                    <option value="${CREATED_KEY}">Creation Date</option>
+                    <option value="${MODIFIED_KEY}">Modification Date</option>
+                    <option value="${NAME_KEY}">Alphabetical</option>
+                </optgroup>
+            `;
+
+            if (sortedCategories.length > 0) {
+                html += `
+                    <optgroup label="Categories">
+                        ${sortedCategories.map(cat => `<option value="${escapeHtml(cat)}">${escapeHtml(cat)}</option>`).join('')}
+                    </optgroup>
+                `;
+            }
+
+            select.innerHTML = html;
+
+            const allOptions = Array.from(select.querySelectorAll('option')).map(o => o.value);
+            if (allOptions.includes(previousSelection)) {
+                select.value = previousSelection;
+                currentSort = previousSelection;
+            } else {
+                select.value = CREATED_KEY;
+                currentSort = CREATED_KEY;
+            }
+        }
+
         function updateDynamicInputs() {
             const container = document.getElementById('dynamicInputs');
             container.innerHTML = '';
@@ -868,6 +958,7 @@
             });
 
             updateNewCategoryAutocomplete();
+            updateSortSelectOptions();
         }
 
         // --- Hierarchy & Rendering ---
@@ -880,14 +971,71 @@
                         const dateA = a.createdAt || a._createdAt || a._created || "";
                         const dateB = b.createdAt || b._createdAt || b._created || "";
                         cmp = dateA.localeCompare(dateB);
+                        if (cmp === 0) {
+                            const nameA = a.name || a.Name || "";
+                            const nameB = b.name || b.Name || "";
+                            cmp = nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+                        }
                     } else if (currentSort === MODIFIED_KEY) {
                         const dateA = a.updatedAt || a._updatedAt || a._modified || (a.createdAt || a._createdAt || a._created || "");
                         const dateB = b.updatedAt || b._updatedAt || b._modified || (b.createdAt || b._createdAt || b._created || "");
                         cmp = dateA.localeCompare(dateB);
+                        if (cmp === 0) {
+                            const nameA = a.name || a.Name || "";
+                            const nameB = b.name || b.Name || "";
+                            cmp = nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+                        }
                     } else if (currentSort === NAME_KEY) {
                         const nameA = a.name || a.Name || "";
                         const nameB = b.name || b.Name || "";
-                        cmp = nameA.localeCompare(nameB);
+                        cmp = nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+                    } else {
+                        // Category sorting
+                        const getVal = (item) => {
+                            if (item.attributes && item.attributes[currentSort] !== undefined && item.attributes[currentSort] !== null) {
+                                return String(item.attributes[currentSort]).trim();
+                            }
+                            if (item[currentSort] !== undefined && item[currentSort] !== null) {
+                                return String(item[currentSort]).trim();
+                            }
+                            return "";
+                        };
+
+                        const valA = getVal(a);
+                        const valB = getVal(b);
+
+                        const isAEmpty = !valA || valA.toLowerCase() === "unspecified";
+                        const isBEmpty = !valB || valB.toLowerCase() === "unspecified";
+
+                        if (isAEmpty && !isBEmpty) return 1;
+                        if (!isAEmpty && isBEmpty) return -1;
+                        if (isAEmpty && isBEmpty) {
+                            const nameA = a.name || a.Name || "";
+                            const nameB = b.name || b.Name || "";
+                            const nameCmp = nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+                            return isReverse ? -nameCmp : nameCmp;
+                        }
+
+                        const numA = Number(valA);
+                        const numB = Number(valB);
+                        const isANum = !isNaN(numA) && typeof valA !== 'boolean' && String(valA).trim() !== '';
+                        const isBNum = !isNaN(numB) && typeof valB !== 'boolean' && String(valB).trim() !== '';
+
+                        if (isANum && isBNum) {
+                            cmp = numA - numB;
+                        } else {
+                            cmp = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
+                        }
+                        if (cmp === 0) {
+                            const nameA = a.name || a.Name || "";
+                            const nameB = b.name || b.Name || "";
+                            cmp = nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+                        }
+                        if (cmp === 0) {
+                            const dateA = a.createdAt || a._createdAt || a._created || "";
+                            const dateB = b.createdAt || b._createdAt || b._created || "";
+                            cmp = dateA.localeCompare(dateB);
+                        }
                     }
                     
                     return isReverse ? -cmp : cmp;
@@ -1046,7 +1194,19 @@
                     const createdDate = formatDate(node.createdAt || node._createdAt || node._created);
                     const modifiedDate = formatDate(node.updatedAt || node._updatedAt || node._modified || node.createdAt || node._createdAt || node._created);
                     
+                    let categoryTagHtml = '';
+                    if (!SYSTEM_KEYS.includes(currentSort)) {
+                        const rawVal = (node.attributes && node.attributes[currentSort] !== undefined && node.attributes[currentSort] !== null)
+                            ? String(node.attributes[currentSort]).trim()
+                            : (node[currentSort] !== undefined && node[currentSort] !== null ? String(node[currentSort]).trim() : "");
+                        const isUnspec = !rawVal || rawVal.toLowerCase() === "unspecified";
+                        const displayVal = isUnspec ? "Unspecified" : rawVal;
+                        const pillClass = isUnspec ? "category-pill unspecified" : "category-pill";
+                        categoryTagHtml = `<span class="${pillClass}" title="${escapeHtml(currentSort)}: ${escapeHtml(displayVal)}">${escapeHtml(displayVal)}</span>`;
+                    }
+
                     metaDiv.innerHTML = `
+                        ${categoryTagHtml}
                         <div class="date-line" title="Created: ${createdDate} | Modified: ${modifiedDate}">
                             <span style="opacity:0.5">C:</span> ${createdDate}
                             <span style="opacity:0.5; margin-left:6px;">M:</span> ${modifiedDate}
@@ -1315,7 +1475,7 @@
 
         async function loadExample() {
             try {
-                const res = await fetch('./data/sample-template.json?v=20261112T033000Z', { cache: 'no-cache' });
+                const res = await fetch('./data/sample-template.json?v=20261112T045500Z', { cache: 'no-cache' });
                 if (res.ok) {
                     const data = await res.json();
                     applyImportedData(data);
