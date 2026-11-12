@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Group Sorter</title>
+    <style>
+        :root {
+            /* Lighter dark mode for better visibility */
+            --bg-color: #1a1a1a; 
+            --panel-bg: #222222;
+            --text-primary: #f0f0f0;
+            --text-secondary: #999999;
+            --accent: #2b7de9;
+            --accent-hover: #408bf0;
+            --border: #3a3a3a;
+            --danger: #ff5555;
+        }
+
+        * {
+            box-sizing: border-box;
+            outline: none;
+        }
+
+        body {
+            /* Robust font stack for Helvetica feel */
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            font-weight: 400;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #666; }
+
+        /* Layout */
+        .sidebar {
+            width: 320px;
+            background-color: var(--panel-bg);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            padding: 20px 15px; /* Reduced padding */
+            gap: 20px; /* Reduced gap */
+            overflow-y: auto;
+            flex-shrink: 0;
+        }
+
+        .main-content {
+            flex-grow: 1;
+            padding: 30px; /* Reduced padding */
+            overflow-y: auto;
+            background-color: var(--bg-color);
+        }
+
+        /* Typography */
+        h2, h3 {
+            margin: 0 0 10px 0; /* Reduced margin */
+            font-weight: 600; 
+            letter-spacing: -0.01em;
+        }
+        
+        h2 { font-size: 22px; color: var(--text-primary); margin-bottom: 20px;}
+        h3 { font-size: 12px; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.05em; margin-bottom: 8px; }
+        
+        p {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+            line-height: 1.4;
+        }
+
+        /* Sections */
+        .section {
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Inputs */
+        .input-group { margin-bottom: 8px; } /* Reduced margin */
+        
+        label {
+            display: block;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+
+        input[type="text"], select {
+            width: 100%;
+            background: transparent;
+            border: none;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 6px 0;
+            font-size: 13px;
+            font-family: inherit;
+            transition: border-color 0.2s;
+            border-radius: 0;
+        }
+
+        input[type="text"]:focus, select:focus {
+            border-bottom-color: var(--accent);
+        }
+        
+        select {
+            cursor: pointer;
+            -webkit-appearance: none;
+            appearance: none;
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6" viewBox="0 0 10 6"><path fill="%23999" d="M0 0l5 5 5-5z"/></svg>');
+            background-repeat: no-repeat;
+            background-position: right 0 center;
+        }
+
+        /* Fix for white background in dropdowns on some browsers */
+        select option {
+            background-color: var(--panel-bg);
+            color: var(--text-primary);
+        }
+
+        /* Buttons */
+        button {
+            background-color: var(--accent);
+            color: white;
+            border: none;
+            padding: 8px 12px; /* Compact padding */
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+
+        button:hover { background-color: var(--accent-hover); }
+        button:active { transform: translateY(1px); }
+        
+        button.secondary {
+            background-color: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+        }
+        button.secondary:hover {
+            border-color: var(--text-secondary);
+            color: var(--text-primary);
+        }
+        
+        button.danger {
+            background-color: transparent;
+            border: 1px solid #552222;
+            color: var(--danger);
+        }
+        button.danger:hover {
+            background-color: var(--danger);
+            border-color: var(--danger);
+            color: white;
+        }
+        
+        button.icon-only {
+            padding: 4px;
+            width: auto;
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 14px; 
+        }
+        button.icon-only:hover { color: var(--text-primary); background: transparent; }
+
+        .btn-row {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        
+        .add-group-row {
+            display: flex;
+            align-items: flex-end;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        /* List & Sorting UI */
+        .sort-list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .sort-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 12px;
+        }
+        
+        .sort-item.disabled { opacity: 0.5; }
+
+        .sort-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        input[type="checkbox"] {
+            appearance: none;
+            width: 12px;
+            height: 12px;
+            border: 1px solid var(--text-secondary);
+            border-radius: 2px;
+            cursor: pointer;
+            position: relative;
+        }
+        input[type="checkbox"]:checked {
+            background-color: var(--accent);
+            border-color: var(--accent);
+        }
+        input[type="checkbox"]:checked::after {
+            content: '';
+            position: absolute;
+            left: 3px;
+            top: 1px;
+            width: 3px;
+            height: 6px;
+            border: solid white;
+            border-width: 0 2px 2px 0;
+            transform: rotate(45deg);
+        }
+
+        .sort-controls { display: flex; gap: 2px; }
+        .sort-controls button {
+            background: transparent;
+            color: var(--text-secondary);
+            padding: 1px 5px;
+            font-size: 11px;
+        }
+        .sort-controls button:hover { color: var(--text-primary); }
+        .sort-controls button:disabled { opacity: 0.3; cursor: not-allowed; }
+
+        /* Sorting Dropdown Area */
+        .sorting-area {
+            display: flex;
+            align-items: flex-end;
+            gap: 8px;
+        }
+
+        /* Tree View */
+        ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        
+        ul ul {
+            padding-left: 12px; /* Compact indent */
+            border-left: 1px solid var(--border);
+            margin-left: 6px; 
+        }
+
+        /* Group Headers */
+        .group-label {
+            padding: 4px 0; /* Compact padding */
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            font-size: 13px; 
+            font-weight: 500;
+            color: var(--text-primary);
+            transition: color 0.2s;
+        }
+        .group-label:hover { color: var(--accent); }
+
+        .group-label::before {
+            content: '▼';
+            font-size: 10px;
+            margin-right: 8px;
+            color: #888; 
+            display: inline-block;
+            transition: transform 0.2s;
+        }
+        .group-label.collapsed::before { transform: rotate(-90deg); }
+        .group-content.collapsed { display: none; }
+        
+        .count-badge {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-left: 6px;
+            font-weight: 400;
+        }
+
+        /* Items */
+        .item-node {
+            position: relative; /* For absolute actions */
+            display: flex;
+            justify-content: space-between;
+            align-items: center; /* Center vertically */
+            padding: 4px 0; /* Compact items */
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+            min-height: 28px;
+        }
+        
+        .item-node:last-child { border-bottom: none; }
+
+        .item-name {
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        .item-meta {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        .date-line {
+            font-size: 10px;
+            color: var(--text-secondary);
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            font-variant-numeric: tabular-nums; /* Helps align numbers */
+        }
+        
+        .item-actions {
+            display: flex;
+            gap: 6px;
+            opacity: 0; 
+            transition: opacity 0.2s;
+            position: absolute;
+            right: 0;
+            background-color: var(--bg-color); /* Cover underlying text */
+            padding-left: 10px;
+            height: 100%;
+            align-items: center;
+        }
+        
+        .item-node:hover .item-actions { opacity: 1; }
+
+        .action-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 10px;
+            color: var(--text-secondary);
+            padding: 0;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-weight: 600;
+        }
+        .action-btn:hover { color: var(--text-primary); }
+        .action-btn.del:hover { color: var(--danger); }
+
+        .empty-state {
+            text-align: center;
+            color: var(--text-secondary);
+            margin-top: 80px;
+            font-weight: 300;
+            font-size: 13px;
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85); 
+            backdrop-filter: blur(2px);
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal.open { display: flex; }
+
+        .modal-content {
+            background: var(--panel-bg);
+            padding: 30px;
+            width: 400px;
+            border-radius: 6px;
+            box-shadow: 0 30px 60px rgba(0,0,0,0.6);
+            border: 1px solid var(--border);
+        }
+        
+        .modal-header {
+            margin-bottom: 20px;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .modal-actions {
+            margin-top: 25px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        #fileInput { display: none; }
+    </style>
+</head>
+<body>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+        
+        <!-- Add Item -->
+        <div class="section">
+            <h3>Add Item</h3>
+            <div class="input-group">
+                <label>Name</label>
+                <input type="text" id="inpName" placeholder="Enter identifier...">
+            </div>
+            <div id="dynamicInputs"></div>
+            <button onclick="addItem()" style="margin-top: 8px;">Add Item</button>
+        </div>
+
+        <!-- Groups -->
+        <div class="section">
+            <h3>Grouping</h3>
+            <p>Drag arrows to reorder hierarchy.</p>
+            <div id="sortContainer" class="sort-list"></div>
+            
+            <div class="add-group-row">
+                <div style="flex-grow:1">
+                    <input type="text" id="newGroupKey" placeholder="New Category">
+                </div>
+                <button class="icon-only" onclick="addNewGroupKey()" title="Add Category">+</button>
+            </div>
+        </div>
+
+        <!-- Sorting -->
+        <div class="section">
+            <h3>Sorting</h3>
+            <div class="sorting-area">
+                <div style="flex-grow:1">
+                    <label>Sort Leaves By</label>
+                    <select id="sortSelect" onchange="changeSort()">
+                        <option value="Creation Date">Creation Date</option>
+                        <option value="Modification Date">Modification Date</option>
+                        <option value="Alphabetical">Alphabetical</option>
+                    </select>
+                </div>
+                <button id="sortOrderBtn" class="secondary" onclick="toggleSortOrder()" title="Toggle Order" style="padding: 6px 10px;">▼</button>
+            </div>
+        </div>
+        
+        <!-- Data -->
+        <div class="section" style="margin-top: auto;">
+            <div class="btn-row">
+                <button class="secondary" style="flex:1" onclick="exportData()">Export</button>
+                <button class="secondary" style="flex:1" onclick="document.getElementById('fileInput').click()">Import</button>
+            </div>
+            <input type="file" id="fileInput" accept=".json" onchange="importData(this)">
+            
+            <div class="btn-row">
+                <button class="secondary" style="flex:1; border:none; font-size:10px;" onclick="loadExample()">Load Example</button>
+                <button class="danger" style="flex:1; border:none; font-size:10px;" onclick="clearAll()">Clear All</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <h2>List View</h2>
+        <div id="treeRoot"></div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">Edit Item</div>
+            <div class="input-group">
+                <label>Name</label>
+                <input type="text" id="editName">
+            </div>
+            <div id="editDynamicContainer"></div>
+            <div class="modal-actions">
+                <button class="secondary" onclick="closeModal()">Cancel</button>
+                <button onclick="saveEdit()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- State Management ---
+        const CREATED_KEY = "Creation Date";
+        const MODIFIED_KEY = "Modification Date";
+        const NAME_KEY = "Alphabetical";
+        const SYSTEM_KEYS = [CREATED_KEY, MODIFIED_KEY, NAME_KEY];
+
+        let items = [];
+        let groupConfigs = []; 
+        let currentSort = CREATED_KEY;
+        let isReverse = false; 
+        let editingItem = null;
+
+        // --- Utilities ---
+        
+        function pad(n) {
+            return n.toString().padStart(2, '0');
+        }
+
+        // Compact format: YYYY/MM/DD
+        function formatDate(isoStr) {
+            if (!isoStr) return "";
+            const d = new Date(isoStr);
+            const year = d.getFullYear();
+            const month = pad(d.getMonth() + 1);
+            const day = pad(d.getDate());
+            return `${year}/${month}/${day}`;
+        }
+
+        // --- Core Logic ---
+
+        function addItem() {
+            const nameInp = document.getElementById('inpName');
+            const name = nameInp.value.trim();
+
+            if (!name) {
+                // Minimalist error feedback
+                nameInp.style.borderBottomColor = 'var(--danger)';
+                setTimeout(() => nameInp.style.borderBottomColor = 'var(--border)', 2000);
+                return;
+            }
+
+            const now = new Date();
+            const nowIso = now.toISOString();
+            const nowFormatted = formatDate(nowIso);
+
+            const newItem = { 
+                Name: name,
+                _created: nowIso,
+                _modified: nowIso
+            };
+            
+            newItem[CREATED_KEY] = nowFormatted;
+            newItem[MODIFIED_KEY] = nowFormatted;
+
+            groupConfigs.forEach(config => {
+                const key = config.name;
+                const inp = document.getElementById('inp_' + key);
+                let val = inp ? inp.value.trim() : "";
+                newItem[key] = val || "Unspecified";
+                if(inp) inp.value = ''; 
+            });
+
+            items.push(newItem);
+            nameInp.value = '';
+            renderTree();
+        }
+        
+        function deleteItem(itemToDelete) {
+            if (!confirm(`Are you sure you want to delete "${itemToDelete.Name}"?`)) return;
+            
+            const index = items.indexOf(itemToDelete);
+            if (index > -1) {
+                items.splice(index, 1);
+                renderTree();
+            }
+        }
+
+        // --- Edit Logic ---
+        
+        function openEditModal(item) {
+            editingItem = item;
+            document.getElementById('editName').value = item.Name;
+            
+            const container = document.getElementById('editDynamicContainer');
+            container.innerHTML = '';
+
+            groupConfigs.forEach(config => {
+                const div = document.createElement('div');
+                div.className = 'input-group';
+                div.innerHTML = `
+                    <label>${config.name}</label>
+                    <input type="text" id="edit_inp_${config.name}" value="${item[config.name] || ''}">
+                `;
+                container.appendChild(div);
+            });
+
+            document.getElementById('editModal').classList.add('open');
+        }
+
+        function closeModal() {
+            document.getElementById('editModal').classList.remove('open');
+            editingItem = null;
+        }
+
+        function saveEdit() {
+            if (!editingItem) return;
+
+            const newName = document.getElementById('editName').value.trim();
+            if (!newName) return alert("Name cannot be empty");
+
+            editingItem.Name = newName;
+
+            groupConfigs.forEach(config => {
+                const inp = document.getElementById('edit_inp_' + config.name);
+                if (inp) {
+                    editingItem[config.name] = inp.value.trim() || "Unspecified";
+                }
+            });
+
+            const now = new Date();
+            const nowIso = now.toISOString();
+            
+            editingItem._modified = nowIso;
+            editingItem[MODIFIED_KEY] = formatDate(nowIso);
+
+            closeModal();
+            renderTree();
+        }
+
+        // --- Group Management ---
+
+        function addNewGroupKey() {
+            const inp = document.getElementById('newGroupKey');
+            const newName = inp.value.trim();
+            
+            if(!newName) return;
+            if(groupConfigs.some(g => g.name === newName)) {
+                alert("Category already exists.");
+                return;
+            }
+            if(SYSTEM_KEYS.includes(newName)) {
+                alert("Name reserved.");
+                return;
+            }
+
+            groupConfigs.push({ name: newName, active: true });
+            
+            inp.value = '';
+            updateDynamicInputs();
+            updateSortUI();
+            renderTree();
+        }
+
+        function removeGroupKey(name) {
+            if(confirm(`Remove category "${name}" completely?`)) {
+                groupConfigs = groupConfigs.filter(g => g.name !== name);
+                updateDynamicInputs();
+                updateSortUI();
+                renderTree();
+            }
+        }
+
+        function toggleGroupKey(index) {
+            groupConfigs[index].active = !groupConfigs[index].active;
+            updateSortUI();
+            renderTree();
+        }
+
+        function changeSort() {
+            const select = document.getElementById('sortSelect');
+            currentSort = select.value;
+            renderTree();
+        }
+        
+        function toggleSortOrder() {
+            isReverse = !isReverse;
+            const btn = document.getElementById('sortOrderBtn');
+            btn.innerHTML = isReverse ? '▲' : '▼'; 
+            renderTree();
+        }
+
+        function updateDynamicInputs() {
+            const container = document.getElementById('dynamicInputs');
+            container.innerHTML = '';
+
+            groupConfigs.forEach(config => {
+                const key = config.name;
+                const div = document.createElement('div');
+                div.className = 'input-group';
+                div.innerHTML = `
+                    <label>${key}</label>
+                    <input type="text" id="inp_${key}" placeholder="Value">
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        // --- Hierarchy & Rendering ---
+
+        function buildHierarchy(itemList, keys) {
+            if (keys.length === 0) {
+                const sorted = itemList.slice().sort((a, b) => {
+                    let cmp = 0;
+                    if (currentSort === CREATED_KEY) {
+                        const dateA = a._created || "";
+                        const dateB = b._created || "";
+                        cmp = dateA.localeCompare(dateB);
+                    } else if (currentSort === MODIFIED_KEY) {
+                        const dateA = a._modified || (a._created || "");
+                        const dateB = b._modified || (b._created || "");
+                        cmp = dateA.localeCompare(dateB);
+                    } else if (currentSort === NAME_KEY) {
+                        cmp = a.Name.localeCompare(b.Name);
+                    }
+                    
+                    return isReverse ? -cmp : cmp;
+                });
+                return sorted;
+            }
+
+            const currentKey = keys[0];
+            const remainingKeys = keys.slice(1);
+
+            const groups = {};
+            itemList.forEach(item => {
+                const value = item[currentKey] || "Unspecified";
+                if (!groups[value]) groups[value] = [];
+                groups[value].push(item);
+            });
+
+            const result = [];
+            const sortedGroupNames = Object.keys(groups).sort();
+            
+            for (const groupName of sortedGroupNames) {
+                result.push({
+                    type: 'group',
+                    name: groupName,
+                    children: buildHierarchy(groups[groupName], remainingKeys)
+                });
+            }
+            return result;
+        }
+
+        function renderTree() {
+            const root = document.getElementById('treeRoot');
+            root.innerHTML = '';
+            
+            updateSortUI();
+
+            if (items.length === 0) {
+                root.innerHTML = '<div class="empty-state">No items. Add one from the sidebar.</div>';
+                return;
+            }
+
+            const activeKeys = groupConfigs.filter(g => g.active).map(g => g.name);
+            const hierarchy = buildHierarchy(items, activeKeys);
+            const listElement = createListElement(hierarchy);
+            root.appendChild(listElement);
+        }
+
+        function createListElement(nodes) {
+            const ul = document.createElement('ul');
+
+            nodes.forEach(node => {
+                const li = document.createElement('li');
+                
+                if (node.type === 'group') {
+                    // Group Row
+                    const label = document.createElement('div');
+                    label.className = 'group-label';
+                    label.innerHTML = `${node.name} <span class="count-badge">${countItems(node)}</span>`;
+                    
+                    label.onclick = function() {
+                        this.classList.toggle('collapsed');
+                        const content = this.nextElementSibling;
+                        if (content) content.classList.toggle('collapsed');
+                    };
+
+                    li.appendChild(label);
+
+                    const childrenContainer = document.createElement('div');
+                    childrenContainer.className = 'group-content';
+                    childrenContainer.appendChild(createListElement(node.children));
+                    li.appendChild(childrenContainer);
+
+                } else {
+                    // Item Row
+                    li.className = 'item-node';
+                    
+                    const nameSpan = document.createElement('div');
+                    nameSpan.className = 'item-name';
+                    nameSpan.textContent = node.Name;
+                    
+                    const metaDiv = document.createElement('div');
+                    metaDiv.className = 'item-meta';
+                    
+                    const createdDate = formatDate(node._created);
+                    const modifiedDate = formatDate(node._modified);
+                    
+                    metaDiv.innerHTML = `
+                        <div class="date-line" title="Created: ${createdDate} | Modified: ${modifiedDate}">
+                            <span style="opacity:0.5">C:</span> ${createdDate}
+                            <span style="opacity:0.5; margin-left:6px;">M:</span> ${modifiedDate}
+                        </div>
+                    `;
+                    
+                    // Hidden actions (absolute)
+                    const actionsDiv = document.createElement('div');
+                    actionsDiv.className = 'item-actions';
+                    
+                    const editBtn = document.createElement('button');
+                    editBtn.className = 'action-btn';
+                    editBtn.textContent = 'Edit';
+                    editBtn.onclick = () => openEditModal(node);
+                    
+                    const sep = document.createElement('span');
+                    sep.style.color = '#444';
+                    sep.textContent = ' | ';
+
+                    const delBtn = document.createElement('button');
+                    delBtn.className = 'action-btn del';
+                    delBtn.textContent = 'Delete';
+                    delBtn.onclick = () => deleteItem(node);
+
+                    actionsDiv.appendChild(editBtn);
+                    actionsDiv.appendChild(sep);
+                    actionsDiv.appendChild(delBtn);
+
+                    li.appendChild(nameSpan);
+                    li.appendChild(metaDiv);
+                    li.appendChild(actionsDiv); // Actions now outside meta, inside item-node (relative parent)
+                }
+                ul.appendChild(li);
+            });
+            return ul;
+        }
+
+        function countItems(node) {
+            if (!node.children) return 1;
+            if (Array.isArray(node.children) && node.children.length > 0 && !node.children[0].type) {
+                return node.children.length;
+            }
+            return node.children.reduce((acc, child) => acc + countItems(child), 0);
+        }
+
+        // --- Sorting UI ---
+
+        function updateSortUI() {
+            const container = document.getElementById('sortContainer');
+            container.innerHTML = '';
+
+            groupConfigs.forEach((config, index) => {
+                const div = document.createElement('div');
+                div.className = `sort-item ${config.active ? '' : 'disabled'}`;
+                
+                const leftDiv = document.createElement('div');
+                leftDiv.className = 'sort-left';
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = config.active;
+                checkbox.onclick = () => toggleGroupKey(index);
+
+                const label = document.createElement('span');
+                label.textContent = config.name;
+                
+                leftDiv.append(checkbox, label);
+                
+                const controls = document.createElement('div');
+                controls.className = 'sort-controls';
+
+                const upBtn = document.createElement('button');
+                upBtn.textContent = '▲';
+                if(index === 0) upBtn.disabled = true; 
+                else upBtn.onclick = () => moveKey(index, -1);
+                
+                const downBtn = document.createElement('button');
+                downBtn.textContent = '▼';
+                if(index === groupConfigs.length - 1) downBtn.disabled = true; 
+                else downBtn.onclick = () => moveKey(index, 1);
+
+                const rmBtn = document.createElement('button');
+                rmBtn.textContent = '×';
+                rmBtn.style.color = 'var(--text-secondary)';
+                rmBtn.onmouseover = function(){ this.style.color = 'var(--danger)'; };
+                rmBtn.onmouseout = function(){ this.style.color = 'var(--text-secondary)'; };
+                rmBtn.onclick = () => removeGroupKey(config.name);
+
+                controls.append(upBtn, downBtn, rmBtn);
+                div.appendChild(leftDiv);
+                div.appendChild(controls);
+                container.appendChild(div);
+            });
+        }
+
+        function moveKey(index, direction) {
+            const newIndex = index + direction;
+            if (newIndex < 0 || newIndex >= groupConfigs.length) return;
+            [groupConfigs[index], groupConfigs[newIndex]] = [groupConfigs[newIndex], groupConfigs[index]];
+            updateDynamicInputs();
+            renderTree();
+        }
+
+        // --- Import / Export ---
+
+        function exportData() {
+            const dataStr = JSON.stringify({ items, groupConfigs }, null, 2);
+            const blob = new Blob([dataStr], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = "group_sorter_data.json";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function importData(input) {
+            const file = input.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if (data.items && Array.isArray(data.items)) {
+                        items = data.items;
+                        if (data.groupConfigs) {
+                            groupConfigs = data.groupConfigs.filter(g => !SYSTEM_KEYS.includes(g.name));
+                        }
+                        
+                        // Patch items
+                        items.forEach(item => {
+                            if (!item._created) {
+                                item._created = item[CREATED_KEY] ? new Date(item[CREATED_KEY]).toISOString() : new Date().toISOString();
+                            }
+                            if (!item._modified) {
+                                item._modified = item[MODIFIED_KEY] ? new Date(item[MODIFIED_KEY]).toISOString() : item._created;
+                            }
+                        });
+
+                        updateDynamicInputs();
+                        renderTree();
+                    }
+                } catch (err) { alert("Error parsing JSON."); }
+                input.value = '';
+            };
+            reader.readAsText(file);
+        }
+
+        function loadExample() {
+            const createWithDate = (props, dateStr, modDateStr) => {
+                const dateObj = new Date(dateStr);
+                const modObj = modDateStr ? new Date(modDateStr) : dateObj;
+                const isoCreated = dateObj.toISOString();
+                const isoModified = modObj.toISOString();
+                
+                return { 
+                    ...props, 
+                    _created: isoCreated,
+                    _modified: isoModified,
+                };
+            };
+
+            items = [
+                createWithDate({ Name: "Isagi Yoichi", Series: "Blue Lock", Type: "Striker", Power: "S" }, "2023-03-10T14:20:00"),
+                createWithDate({ Name: "Bachira Meguru", Series: "Blue Lock", Type: "Dribbler", Power: "A+" }, "2023-03-12T09:15:00", "2024-01-20T10:00:00"),
+                createWithDate({ Name: "Lelouch vi Britannia", Series: "Code Geass", Type: "Strategist", Power: "SSS" }, "2024-01-01T00:01:00"),
+                createWithDate({ Name: "C.C.", Series: "Code Geass", Type: "Immortal", Power: "S" }, "2024-01-02T18:45:00"),
+                createWithDate({ Name: "Emilia", Series: "Re:Zero", Type: "Spirit Arts", Power: "S" }, "2025-05-01T12:00:00"),
+                createWithDate({ Name: "Rem", Series: "Re:Zero", Type: "Oni", Power: "A" }, "2025-05-02T08:30:00")
+            ];
+            
+            groupConfigs = [
+                { name: 'Series', active: true },
+                { name: 'Type', active: true }
+            ];
+            updateDynamicInputs();
+            renderTree();
+        }
+
+        function clearAll() {
+            if((items.length > 0 || groupConfigs.length > 0) && confirm("Delete all items and groups?")) {
+                items = [];
+                groupConfigs = [];
+                updateDynamicInputs();
+                updateSortUI();
+                renderTree();
+            }
+        }
+
+        // Init
+        updateDynamicInputs();
+        renderTree();
+
+    </script>
+</body>
+</html>
