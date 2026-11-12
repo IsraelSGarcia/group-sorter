@@ -513,6 +513,7 @@
         function formatDate(isoStr) {
             if (!isoStr) return "";
             const d = new Date(isoStr);
+            if (isNaN(d.getTime())) return "";
             const year = d.getFullYear();
             const month = pad(d.getMonth() + 1);
             const day = pad(d.getDate());
@@ -534,16 +535,12 @@
 
             const now = new Date();
             const nowIso = now.toISOString();
-            const nowFormatted = formatDate(nowIso);
 
             const newItem = { 
                 Name: name,
-                _created: nowIso,
-                _modified: nowIso
+                _createdAt: nowIso,
+                _updatedAt: nowIso
             };
-            
-            newItem[CREATED_KEY] = nowFormatted;
-            newItem[MODIFIED_KEY] = nowFormatted;
 
             groupConfigs.forEach(config => {
                 const key = config.name;
@@ -613,8 +610,7 @@
             const now = new Date();
             const nowIso = now.toISOString();
             
-            editingItem._modified = nowIso;
-            editingItem[MODIFIED_KEY] = formatDate(nowIso);
+            editingItem._updatedAt = nowIso;
 
             closeModal();
             renderTree();
@@ -695,12 +691,12 @@
                 const sorted = itemList.slice().sort((a, b) => {
                     let cmp = 0;
                     if (currentSort === CREATED_KEY) {
-                        const dateA = a._created || "";
-                        const dateB = b._created || "";
+                        const dateA = a._createdAt || a._created || "";
+                        const dateB = b._createdAt || b._created || "";
                         cmp = dateA.localeCompare(dateB);
                     } else if (currentSort === MODIFIED_KEY) {
-                        const dateA = a._modified || (a._created || "");
-                        const dateB = b._modified || (b._created || "");
+                        const dateA = a._updatedAt || a._modified || (a._createdAt || a._created || "");
+                        const dateB = b._updatedAt || b._modified || (b._createdAt || b._created || "");
                         cmp = dateA.localeCompare(dateB);
                     } else if (currentSort === NAME_KEY) {
                         cmp = a.Name.localeCompare(b.Name);
@@ -716,7 +712,14 @@
 
             const groups = {};
             itemList.forEach(item => {
-                const value = item[currentKey] || "Unspecified";
+                let value;
+                if (currentKey === CREATED_KEY) {
+                    value = formatDate(item._createdAt || item._created) || "Unspecified";
+                } else if (currentKey === MODIFIED_KEY) {
+                    value = formatDate(item._updatedAt || item._modified || item._createdAt || item._created) || "Unspecified";
+                } else {
+                    value = item[currentKey] || "Unspecified";
+                }
                 if (!groups[value]) groups[value] = [];
                 groups[value].push(item);
             });
@@ -787,8 +790,8 @@
                     const metaDiv = document.createElement('div');
                     metaDiv.className = 'item-meta';
                     
-                    const createdDate = formatDate(node._created);
-                    const modifiedDate = formatDate(node._modified);
+                    const createdDate = formatDate(node._createdAt || node._created);
+                    const modifiedDate = formatDate(node._updatedAt || node._modified || node._createdAt || node._created);
                     
                     metaDiv.innerHTML = `
                         <div class="date-line" title="Created: ${createdDate} | Modified: ${modifiedDate}">
@@ -922,14 +925,43 @@
                             groupConfigs = data.groupConfigs.filter(g => !SYSTEM_KEYS.includes(g.name));
                         }
                         
-                        // Patch items
+                        // Normalize and patch items to standard _createdAt and _updatedAt
                         items.forEach(item => {
-                            if (!item._created) {
-                                item._created = item[CREATED_KEY] ? new Date(item[CREATED_KEY]).toISOString() : new Date().toISOString();
+                            let createdIso = item._createdAt || item.createdAt;
+                            if (!createdIso) {
+                                if (item._created) {
+                                    createdIso = item._created;
+                                } else if (item[CREATED_KEY]) {
+                                    const parsed = new Date(item[CREATED_KEY]);
+                                    createdIso = isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
+                                } else {
+                                    createdIso = new Date().toISOString();
+                                }
                             }
-                            if (!item._modified) {
-                                item._modified = item[MODIFIED_KEY] ? new Date(item[MODIFIED_KEY]).toISOString() : item._created;
+
+                            let updatedIso = item._updatedAt || item.updatedAt || item.modifiedAt;
+                            if (!updatedIso) {
+                                if (item._modified) {
+                                    updatedIso = item._modified;
+                                } else if (item[MODIFIED_KEY]) {
+                                    const parsed = new Date(item[MODIFIED_KEY]);
+                                    updatedIso = isNaN(parsed.getTime()) ? createdIso : parsed.toISOString();
+                                } else {
+                                    updatedIso = createdIso;
+                                }
                             }
+
+                            item._createdAt = createdIso;
+                            item._updatedAt = updatedIso;
+
+                            // Clean up legacy redundant properties
+                            delete item._created;
+                            delete item._modified;
+                            delete item[CREATED_KEY];
+                            delete item[MODIFIED_KEY];
+                            delete item.createdAt;
+                            delete item.updatedAt;
+                            delete item.modifiedAt;
                         });
 
                         updateDynamicInputs();
@@ -950,8 +982,8 @@
                 
                 return { 
                     ...props, 
-                    _created: isoCreated,
-                    _modified: isoModified,
+                    _createdAt: isoCreated,
+                    _updatedAt: isoModified
                 };
             };
 
