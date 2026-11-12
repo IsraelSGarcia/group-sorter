@@ -247,11 +247,90 @@
         .sort-controls button:hover { color: var(--text-primary); }
         .sort-controls button:disabled { opacity: 0.3; cursor: not-allowed; }
 
+        .sort-item {
+            cursor: grab;
+            transition: background 0.15s, opacity 0.15s, border-color 0.15s;
+        }
+        .sort-item:active { cursor: grabbing; }
+        .sort-item.dragging { opacity: 0.35; }
+        .sort-item.drag-over {
+            border-color: var(--accent);
+            background: rgba(43, 125, 233, 0.15);
+        }
+
         /* Sorting Dropdown Area */
         .sorting-area {
             display: flex;
             align-items: flex-end;
             gap: 8px;
+        }
+
+        /* List Header & Search Actions */
+        .list-header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .header-count-badge {
+            font-size: 13px;
+            color: var(--text-secondary);
+            font-weight: 400;
+        }
+
+        .list-header-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .search-box {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .search-box input {
+            width: 220px;
+            padding: 5px 26px 5px 8px;
+            background: var(--panel-bg);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-size: 12px;
+            color: var(--text-primary);
+            transition: border-color 0.2s, width 0.2s;
+        }
+
+        .search-box input:focus {
+            border-color: var(--accent);
+            width: 270px;
+        }
+
+        .search-box button {
+            position: absolute;
+            right: 4px;
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 2px 4px;
+            font-size: 11px;
+            display: none;
+        }
+
+        .search-box button:hover {
+            color: var(--text-primary);
+        }
+
+        .small-action-btn {
+            padding: 5px 10px;
+            font-size: 11px;
+            border-radius: 4px;
+            white-space: nowrap;
         }
 
         /* Tree View */
@@ -421,6 +500,11 @@
                 </select>
                 <button class="secondary icon-only" onclick="loadGroupFilesList()" title="Refresh files" style="padding: 6px 10px; font-size: 13px;">↻</button>
             </div>
+            <div class="btn-row" style="margin-top: 8px;">
+                <button id="saveBtn" style="flex: 1;" onclick="saveCurrentGroupFile()" title="Save changes to disk (Ctrl+S)">Save</button>
+                <button class="secondary" style="flex: 1;" onclick="saveAsNewGroupFile()" title="Save as a new group file">Save As...</button>
+            </div>
+            <div id="saveStatusMsg" style="font-size: 11px; color: #2ecc71; margin-top: 4px; display: none;">Saved to disk ✓</div>
         </div>
 
         <!-- Add Item -->
@@ -437,7 +521,7 @@
         <!-- Groups -->
         <div class="section">
             <h3>Grouping</h3>
-            <p>Drag arrows to reorder hierarchy.</p>
+            <p>Drag items or click arrows to reorder hierarchy.</p>
             <div id="sortContainer" class="sort-list"></div>
             
             <div class="add-group-row">
@@ -482,7 +566,20 @@
 
     <!-- Main Content -->
     <div class="main-content">
-        <h2>List View</h2>
+        <div class="list-header-row">
+            <div style="display: flex; align-items: baseline; gap: 10px;">
+                <h2 style="margin-bottom: 0;">List View</h2>
+                <span id="itemCountHeader" class="header-count-badge"></span>
+            </div>
+            <div class="list-header-actions">
+                <div class="search-box">
+                    <input type="text" id="searchInput" placeholder="Search items... (Press /)" oninput="handleSearch(this.value)" autocomplete="off">
+                    <button id="clearSearchBtn" onclick="clearSearch()" title="Clear search">✕</button>
+                </div>
+                <button class="secondary small-action-btn" onclick="expandAllGroups()" title="Expand All Groups">Expand All</button>
+                <button class="secondary small-action-btn" onclick="collapseAllGroups()" title="Collapse All Groups">Collapse All</button>
+            </div>
+        </div>
         <div id="treeRoot"></div>
     </div>
 
@@ -805,24 +902,80 @@
             return result;
         }
 
+        let searchQuery = "";
+        let draggedGroupIndex = null;
+
+        function handleSearch(val) {
+            searchQuery = (val || "").trim().toLowerCase();
+            const clearBtn = document.getElementById('clearSearchBtn');
+            if (clearBtn) {
+                clearBtn.style.display = searchQuery ? 'block' : 'none';
+            }
+            renderTree();
+        }
+
+        function clearSearch() {
+            const input = document.getElementById('searchInput');
+            if (input) input.value = '';
+            handleSearch('');
+        }
+
+        function expandAllGroups() {
+            document.querySelectorAll('.group-label.collapsed').forEach(el => el.classList.remove('collapsed'));
+            document.querySelectorAll('.group-content.collapsed').forEach(el => el.classList.remove('collapsed'));
+        }
+
+        function collapseAllGroups() {
+            document.querySelectorAll('.group-label').forEach(el => el.classList.add('collapsed'));
+            document.querySelectorAll('.group-content').forEach(el => el.classList.add('collapsed'));
+        }
+
         function renderTree() {
             const root = document.getElementById('treeRoot');
             root.innerHTML = '';
             
             updateSortUI();
 
+            const countBadge = document.getElementById('itemCountHeader');
+            if (countBadge) {
+                countBadge.textContent = items.length === 1 ? '(1 item)' : `(${items.length} items)`;
+            }
+
             if (items.length === 0) {
                 root.innerHTML = '<div class="empty-state">No items. Add one from the sidebar.</div>';
                 return;
             }
 
+            let displayItems = items;
+            if (searchQuery) {
+                displayItems = items.filter(item => {
+                    if (item.Name && item.Name.toLowerCase().includes(searchQuery)) return true;
+                    for (const key of Object.keys(item)) {
+                        if (!key.startsWith('_') && key !== 'Name') {
+                            const val = String(item[key] || '').toLowerCase();
+                            if (val.includes(searchQuery)) return true;
+                        }
+                    }
+                    return false;
+                });
+
+                if (countBadge) {
+                    countBadge.textContent = `(${displayItems.length} of ${items.length} items)`;
+                }
+
+                if (displayItems.length === 0) {
+                    root.innerHTML = `<div class="empty-state">No matches found for "${escapeHtml(searchQuery)}".</div>`;
+                    return;
+                }
+            }
+
             const activeKeys = groupConfigs.filter(g => g.active).map(g => g.name);
-            const hierarchy = buildHierarchy(items, activeKeys);
-            const listElement = createListElement(hierarchy);
+            const hierarchy = buildHierarchy(displayItems, activeKeys);
+            const listElement = createListElement(hierarchy, !!searchQuery);
             root.appendChild(listElement);
         }
 
-        function createListElement(nodes) {
+        function createListElement(nodes, autoExpand = false) {
             const ul = document.createElement('ul');
 
             nodes.forEach(node => {
@@ -832,7 +985,7 @@
                     // Group Row
                     const label = document.createElement('div');
                     label.className = 'group-label';
-                    label.innerHTML = `${node.name} <span class="count-badge">${countItems(node)}</span>`;
+                    label.innerHTML = `${escapeHtml(node.name)} <span class="count-badge">${countItems(node)}</span>`;
                     
                     label.onclick = function() {
                         this.classList.toggle('collapsed');
@@ -844,7 +997,7 @@
 
                     const childrenContainer = document.createElement('div');
                     childrenContainer.className = 'group-content';
-                    childrenContainer.appendChild(createListElement(node.children));
+                    childrenContainer.appendChild(createListElement(node.children, autoExpand));
                     li.appendChild(childrenContainer);
 
                 } else {
@@ -916,6 +1069,42 @@
             groupConfigs.forEach((config, index) => {
                 const div = document.createElement('div');
                 div.className = `sort-item ${config.active ? '' : 'disabled'}`;
+                div.draggable = true;
+                div.title = "Drag to reorder or click arrows";
+
+                div.ondragstart = (e) => {
+                    draggedGroupIndex = index;
+                    e.dataTransfer.effectAllowed = 'move';
+                    div.classList.add('dragging');
+                };
+
+                div.ondragend = () => {
+                    div.classList.remove('dragging');
+                    document.querySelectorAll('.sort-item').forEach(el => el.classList.remove('drag-over'));
+                };
+
+                div.ondragover = (e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    div.classList.add('drag-over');
+                };
+
+                div.ondragleave = () => {
+                    div.classList.remove('drag-over');
+                };
+
+                div.ondrop = (e) => {
+                    e.preventDefault();
+                    div.classList.remove('drag-over');
+                    if (draggedGroupIndex !== null && draggedGroupIndex !== index) {
+                        const [moved] = groupConfigs.splice(draggedGroupIndex, 1);
+                        groupConfigs.splice(index, 0, moved);
+                        updateDynamicInputs();
+                        updateSortUI();
+                        renderTree();
+                    }
+                    draggedGroupIndex = null;
+                };
                 
                 const leftDiv = document.createElement('div');
                 leftDiv.className = 'sort-left';
@@ -1045,7 +1234,16 @@
             reader.readAsText(file);
         }
 
-        function loadExample() {
+        async function loadExample() {
+            try {
+                const res = await fetch('./data/sample-template.json', { cache: 'no-cache' });
+                if (res.ok) {
+                    const data = await res.json();
+                    applyImportedData(data);
+                    return;
+                }
+            } catch (err) {}
+
             const createWithDate = (props, dateStr, modDateStr) => {
                 const dateObj = new Date(dateStr);
                 const modObj = modDateStr ? new Date(modDateStr) : dateObj;
@@ -1060,17 +1258,18 @@
             };
 
             items = [
-                createWithDate({ Name: "Isagi Yoichi", Series: "Blue Lock", Type: "Striker", Power: "S" }, "2023-03-10T14:20:00"),
-                createWithDate({ Name: "Bachira Meguru", Series: "Blue Lock", Type: "Dribbler", Power: "A+" }, "2023-03-12T09:15:00", "2024-01-20T10:00:00"),
-                createWithDate({ Name: "Lelouch vi Britannia", Series: "Code Geass", Type: "Strategist", Power: "SSS" }, "2024-01-01T00:01:00"),
-                createWithDate({ Name: "C.C.", Series: "Code Geass", Type: "Immortal", Power: "S" }, "2024-01-02T18:45:00"),
-                createWithDate({ Name: "Emilia", Series: "Re:Zero", Type: "Spirit Arts", Power: "S" }, "2025-05-01T12:00:00"),
-                createWithDate({ Name: "Rem", Series: "Re:Zero", Type: "Oni", Power: "A" }, "2025-05-02T08:30:00")
+                createWithDate({ Name: "Lelouch vi Britannia", Series: "Code Geass", Role: "Strategist", Tier: "S+" }, "2024-01-01T00:01:00"),
+                createWithDate({ Name: "C.C.", Series: "Code Geass", Role: "Immortal", Tier: "S" }, "2024-01-02T18:45:00"),
+                createWithDate({ Name: "Isagi Yoichi", Series: "Blue Lock", Role: "Striker", Tier: "S" }, "2023-03-10T14:20:00"),
+                createWithDate({ Name: "Bachira Meguru", Series: "Blue Lock", Role: "Dribbler", Tier: "A+" }, "2023-03-12T09:15:00", "2024-01-20T10:00:00"),
+                createWithDate({ Name: "Emilia", Series: "Re:Zero", Role: "Spirit Arts", Tier: "S" }, "2025-05-01T12:00:00"),
+                createWithDate({ Name: "Rem", Series: "Re:Zero", Role: "Oni Maid", Tier: "A" }, "2025-05-02T08:30:00")
             ];
             
             groupConfigs = [
                 { name: 'Series', active: true },
-                { name: 'Type', active: true }
+                { name: 'Role', active: true },
+                { name: 'Tier', active: false }
             ];
             updateDynamicInputs();
             renderTree();
@@ -1156,6 +1355,102 @@
                 console.error("Failed to load group file:", err);
             }
         }
+
+        async function saveCurrentGroupFile() {
+            const select = document.getElementById('savedGroupSelect');
+            const filename = select ? select.value : "";
+            if (!filename) {
+                return saveAsNewGroupFile();
+            }
+            await performSave(filename);
+        }
+
+        async function saveAsNewGroupFile() {
+            const promptName = prompt("Enter filename to save in groups/ (e.g. my-list.json):", "my-characters.json");
+            if (!promptName) return;
+            let filename = promptName.trim();
+            if (!filename.endsWith(".json")) filename += ".json";
+            await performSave(filename, true);
+        }
+
+        async function performSave(filename, isNew = false) {
+            const saveBtn = document.getElementById('saveBtn');
+            const statusMsg = document.getElementById('saveStatusMsg');
+
+            try {
+                if (saveBtn) saveBtn.textContent = 'Saving...';
+
+                const cleanItems = items.map(item => {
+                    const { _created, _modified, [CREATED_KEY]: _ck, [MODIFIED_KEY]: _mk, ...rest } = item;
+                    return rest;
+                });
+
+                const res = await fetch('/api/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        filename: filename,
+                        data: {
+                            items: cleanItems,
+                            groupConfigs: groupConfigs
+                        }
+                    })
+                });
+
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || `HTTP ${res.status}`);
+                }
+
+                const result = await res.json();
+                if (saveBtn) {
+                    saveBtn.textContent = 'Saved ✓';
+                    setTimeout(() => { saveBtn.textContent = 'Save'; }, 1500);
+                }
+                if (statusMsg) {
+                    statusMsg.textContent = `Saved to ${result.filename} ✓`;
+                    statusMsg.style.display = 'block';
+                    setTimeout(() => { statusMsg.style.display = 'none'; }, 2500);
+                }
+
+                if (isNew) {
+                    await loadGroupFilesList();
+                    const select = document.getElementById('savedGroupSelect');
+                    if (select) select.value = result.filename;
+                }
+            } catch (err) {
+                alert("Failed to save: " + err.message);
+                if (saveBtn) saveBtn.textContent = 'Save';
+            }
+        }
+
+        // Global keyboard shortcuts
+        window.addEventListener('keydown', (e) => {
+            // Save on Ctrl+S / Cmd+S
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+                e.preventDefault();
+                saveCurrentGroupFile();
+            }
+            // Focus search on '/' or 'Ctrl+F'
+            if (e.key === '/' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+                e.preventDefault();
+                const searchInput = document.getElementById('searchInput');
+                if (searchInput) searchInput.focus();
+            }
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+                const searchInput = document.getElementById('searchInput');
+                if (searchInput && document.activeElement !== searchInput) {
+                    e.preventDefault();
+                    searchInput.focus();
+                    searchInput.select();
+                }
+            }
+            // Clear search on Escape
+            if (e.key === 'Escape' && document.activeElement.id === 'searchInput') {
+                clearSearch();
+                document.activeElement.blur();
+            }
+        });
 
         // Init
         updateDynamicInputs();

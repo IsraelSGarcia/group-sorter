@@ -62,6 +62,37 @@ class GroupSorterHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(b'{"status":"ok"}')
             return
 
+        if parsed.path == "/api/save":
+            try:
+                content_len = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(content_len)
+                payload = json.loads(body.decode("utf-8"))
+                filename = payload.get("filename", "").strip()
+                data = payload.get("data")
+
+                filename = os.path.basename(filename)
+                if not filename.endswith(".json"):
+                    filename += ".json"
+
+                if not os.path.exists(GROUPS_DIR):
+                    os.makedirs(GROUPS_DIR, exist_ok=True)
+
+                filepath = os.path.join(GROUPS_DIR, filename)
+                with open(filepath, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2, ensure_ascii=False)
+                    f.write("\n")
+
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "saved", "filename": filename}).encode("utf-8"))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+            return
+
         if parsed.path == "/api/shutdown":
             with lock:
                 # 1.5s grace period so reload/F5 doesn't kill the server before the new page connects
