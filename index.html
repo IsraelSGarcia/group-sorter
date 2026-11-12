@@ -412,6 +412,17 @@
     <!-- Sidebar -->
     <div class="sidebar">
         
+        <!-- Saved Groups -->
+        <div class="section" id="savedGroupsSection">
+            <h3>Saved Groups</h3>
+            <div style="display: flex; gap: 6px; align-items: center;">
+                <select id="savedGroupSelect" onchange="onSavedGroupSelected()" style="flex: 1;">
+                    <option value="">Scanning groups/...</option>
+                </select>
+                <button class="secondary icon-only" onclick="loadGroupFilesList()" title="Refresh files" style="padding: 6px 10px; font-size: 13px;">↻</button>
+            </div>
+        </div>
+
         <!-- Add Item -->
         <div class="section">
             <h3>Add Item</h3>
@@ -912,6 +923,57 @@
             URL.revokeObjectURL(url);
         }
 
+        function applyImportedData(data) {
+            if (data && data.items && Array.isArray(data.items)) {
+                items = data.items;
+                if (data.groupConfigs) {
+                    groupConfigs = data.groupConfigs.filter(g => !SYSTEM_KEYS.includes(g.name));
+                }
+                
+                // Normalize and patch items to standard _createdAt and _updatedAt
+                items.forEach(item => {
+                    let createdIso = item._createdAt || item.createdAt;
+                    if (!createdIso) {
+                        if (item._created) {
+                            createdIso = item._created;
+                        } else if (item[CREATED_KEY]) {
+                            const parsed = new Date(item[CREATED_KEY]);
+                            createdIso = isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
+                        } else {
+                            createdIso = new Date().toISOString();
+                        }
+                    }
+
+                    let updatedIso = item._updatedAt || item.updatedAt || item.modifiedAt;
+                    if (!updatedIso) {
+                        if (item._modified) {
+                            updatedIso = item._modified;
+                        } else if (item[MODIFIED_KEY]) {
+                            const parsed = new Date(item[MODIFIED_KEY]);
+                            updatedIso = isNaN(parsed.getTime()) ? createdIso : parsed.toISOString();
+                        } else {
+                            updatedIso = createdIso;
+                        }
+                    }
+
+                    item._createdAt = createdIso;
+                    item._updatedAt = updatedIso;
+
+                    // Clean up legacy redundant properties
+                    delete item._created;
+                    delete item._modified;
+                    delete item[CREATED_KEY];
+                    delete item[MODIFIED_KEY];
+                    delete item.createdAt;
+                    delete item.updatedAt;
+                    delete item.modifiedAt;
+                });
+
+                updateDynamicInputs();
+                renderTree();
+            }
+        }
+
         function importData(input) {
             const file = input.files[0];
             if (!file) return;
@@ -919,54 +981,7 @@
             reader.onload = function(e) {
                 try {
                     const data = JSON.parse(e.target.result);
-                    if (data.items && Array.isArray(data.items)) {
-                        items = data.items;
-                        if (data.groupConfigs) {
-                            groupConfigs = data.groupConfigs.filter(g => !SYSTEM_KEYS.includes(g.name));
-                        }
-                        
-                        // Normalize and patch items to standard _createdAt and _updatedAt
-                        items.forEach(item => {
-                            let createdIso = item._createdAt || item.createdAt;
-                            if (!createdIso) {
-                                if (item._created) {
-                                    createdIso = item._created;
-                                } else if (item[CREATED_KEY]) {
-                                    const parsed = new Date(item[CREATED_KEY]);
-                                    createdIso = isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
-                                } else {
-                                    createdIso = new Date().toISOString();
-                                }
-                            }
-
-                            let updatedIso = item._updatedAt || item.updatedAt || item.modifiedAt;
-                            if (!updatedIso) {
-                                if (item._modified) {
-                                    updatedIso = item._modified;
-                                } else if (item[MODIFIED_KEY]) {
-                                    const parsed = new Date(item[MODIFIED_KEY]);
-                                    updatedIso = isNaN(parsed.getTime()) ? createdIso : parsed.toISOString();
-                                } else {
-                                    updatedIso = createdIso;
-                                }
-                            }
-
-                            item._createdAt = createdIso;
-                            item._updatedAt = updatedIso;
-
-                            // Clean up legacy redundant properties
-                            delete item._created;
-                            delete item._modified;
-                            delete item[CREATED_KEY];
-                            delete item[MODIFIED_KEY];
-                            delete item.createdAt;
-                            delete item.updatedAt;
-                            delete item.modifiedAt;
-                        });
-
-                        updateDynamicInputs();
-                        renderTree();
-                    }
+                    applyImportedData(data);
                 } catch (err) { alert("Error parsing JSON."); }
                 input.value = '';
             };
@@ -1014,9 +1029,84 @@
             }
         }
 
+        // --- Server Integration & Auto-Loading ---
+        let heartbeatInterval = null;
+
+        function startHeartbeat() {
+            function sendHeartbeat() {
+                fetch('/api/heartbeat', { method: 'POST', keepalive: true }).catch(() => {});
+            }
+            sendHeartbeat();
+            if (!heartbeatInterval) {
+                heartbeatInterval = setInterval(sendHeartbeat, 1500);
+            }
+        }
+
+        window.addEventListener('pagehide', () => {
+            if (navigator.sendBeacon) {
+                navigator.sendBeacon('/api/shutdown');
+            } else {
+                fetch('/api/shutdown', { method: 'POST', keepalive: true }).catch(() => {});
+            }
+        });
+
+        async function loadGroupFilesList() {
+            const select = document.getElementById('savedGroupSelect');
+            if (!select) return;
+
+            try {
+                const res = await fetch('/api/groups', { cache: 'no-cache' });
+                if (!res.ok) throw new Error("API not available");
+                const files = await res.json();
+
+                select.innerHTML = '';
+                if (!files || files.length === 0) {
+                    select.innerHTML = '<option value="">(No files in groups/)</option>';
+                    return;
+                }
+
+                files.forEach(file => {
+                    const opt = document.createElement('option');
+                    opt.value = file.filename;
+                    opt.textContent = file.name;
+                    select.appendChild(opt);
+                });
+
+                // Auto-load preferred file (replica first, or first available file)
+                const preferred = files.find(f => f.filename.includes('replica')) || files[0];
+                select.value = preferred.filename;
+                await loadGroupFile(preferred.filename);
+            } catch (err) {
+                if (select) {
+                    select.innerHTML = '<option value="">(Standalone / No Server)</option>';
+                }
+            }
+        }
+
+        async function onSavedGroupSelected() {
+            const select = document.getElementById('savedGroupSelect');
+            if (!select || !select.value) return;
+            await loadGroupFile(select.value);
+        }
+
+        async function loadGroupFile(filename) {
+            try {
+                const res = await fetch(`./groups/${encodeURIComponent(filename)}`, { cache: 'no-cache' });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                applyImportedData(data);
+            } catch (err) {
+                console.error("Failed to load group file:", err);
+            }
+        }
+
         // Init
         updateDynamicInputs();
         renderTree();
+
+        // Server initialization & auto-load groups
+        startHeartbeat();
+        loadGroupFilesList();
 
     </script>
 </body>
