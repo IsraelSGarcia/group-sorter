@@ -442,7 +442,8 @@
             
             <div class="add-group-row">
                 <div style="flex-grow:1">
-                    <input type="text" id="newGroupKey" placeholder="New Category">
+                    <input type="text" id="newGroupKey" placeholder="New Category" list="dl_newGroupKey" autocomplete="off">
+                    <datalist id="dl_newGroupKey"></datalist>
                 </div>
                 <button class="icon-only" onclick="addNewGroupKey()" title="Add Category">+</button>
             </div>
@@ -531,6 +532,44 @@
             return `${year}/${month}/${day}`;
         }
 
+        function escapeHtml(str) {
+            if (str === undefined || str === null) return "";
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
+
+        function getUniqueCategoryValues(categoryKey) {
+            const valuesSet = new Set();
+            items.forEach(item => {
+                const val = item[categoryKey];
+                if (val !== undefined && val !== null && val !== "" && val !== "Unspecified") {
+                    valuesSet.add(String(val).trim());
+                }
+            });
+            return Array.from(valuesSet).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+        }
+
+        function updateNewCategoryAutocomplete() {
+            const dl = document.getElementById('dl_newGroupKey');
+            if (!dl) return;
+
+            const activeKeys = new Set(groupConfigs.map(g => g.name));
+            const availableKeys = new Set();
+            items.forEach(item => {
+                Object.keys(item).forEach(k => {
+                    if (!activeKeys.has(k) && !SYSTEM_KEYS.includes(k) && k !== 'Name' && !k.startsWith('_')) {
+                        availableKeys.add(k);
+                    }
+                });
+            });
+
+            dl.innerHTML = Array.from(availableKeys).sort().map(k => `<option value="${escapeHtml(k)}">`).join('');
+        }
+
         // --- Core Logic ---
 
         function addItem() {
@@ -563,6 +602,7 @@
 
             items.push(newItem);
             nameInp.value = '';
+            updateDynamicInputs();
             renderTree();
         }
         
@@ -572,6 +612,7 @@
             const index = items.indexOf(itemToDelete);
             if (index > -1) {
                 items.splice(index, 1);
+                updateDynamicInputs();
                 renderTree();
             }
         }
@@ -586,11 +627,18 @@
             container.innerHTML = '';
 
             groupConfigs.forEach(config => {
+                const key = config.name;
+                const uniqueValues = getUniqueCategoryValues(key);
+                const datalistId = `edit_dl_${encodeURIComponent(key)}`;
+
                 const div = document.createElement('div');
                 div.className = 'input-group';
                 div.innerHTML = `
-                    <label>${config.name}</label>
-                    <input type="text" id="edit_inp_${config.name}" value="${item[config.name] || ''}">
+                    <label>${escapeHtml(key)}</label>
+                    <input type="text" id="edit_inp_${escapeHtml(key)}" value="${escapeHtml(item[key] || '')}" list="${datalistId}" autocomplete="off">
+                    <datalist id="${datalistId}">
+                        ${uniqueValues.map(v => `<option value="${escapeHtml(v)}">`).join('')}
+                    </datalist>
                 `;
                 container.appendChild(div);
             });
@@ -624,6 +672,7 @@
             editingItem._updatedAt = nowIso;
 
             closeModal();
+            updateDynamicInputs();
             renderTree();
         }
 
@@ -685,14 +734,22 @@
 
             groupConfigs.forEach(config => {
                 const key = config.name;
+                const uniqueValues = getUniqueCategoryValues(key);
+                const datalistId = `dl_inp_${encodeURIComponent(key)}`;
+
                 const div = document.createElement('div');
                 div.className = 'input-group';
                 div.innerHTML = `
-                    <label>${key}</label>
-                    <input type="text" id="inp_${key}" placeholder="Value">
+                    <label>${escapeHtml(key)}</label>
+                    <input type="text" id="inp_${escapeHtml(key)}" placeholder="Value" list="${datalistId}" autocomplete="off">
+                    <datalist id="${datalistId}">
+                        ${uniqueValues.map(v => `<option value="${escapeHtml(v)}">`).join('')}
+                    </datalist>
                 `;
                 container.appendChild(div);
             });
+
+            updateNewCategoryAutocomplete();
         }
 
         // --- Hierarchy & Rendering ---
