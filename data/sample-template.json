@@ -1,54 +1,9 @@
 {
-  "items": [
-    {
-      "Name": "Lelouch vi Britannia",
-      "_createdAt": "2024-01-01T00:01:00.000Z",
-      "_updatedAt": "2024-01-01T00:01:00.000Z",
-      "Series": "Code Geass",
-      "Role": "Strategist",
-      "Tier": "S+"
-    },
-    {
-      "Name": "C.C.",
-      "_createdAt": "2024-01-02T18:45:00.000Z",
-      "_updatedAt": "2024-01-02T18:45:00.000Z",
-      "Series": "Code Geass",
-      "Role": "Immortal",
-      "Tier": "S"
-    },
-    {
-      "Name": "Isagi Yoichi",
-      "_createdAt": "2023-03-10T14:20:00.000Z",
-      "_updatedAt": "2023-03-10T14:20:00.000Z",
-      "Series": "Blue Lock",
-      "Role": "Striker",
-      "Tier": "S"
-    },
-    {
-      "Name": "Bachira Meguru",
-      "_createdAt": "2023-03-12T09:15:00.000Z",
-      "_updatedAt": "2024-01-20T10:00:00.000Z",
-      "Series": "Blue Lock",
-      "Role": "Dribbler",
-      "Tier": "A+"
-    },
-    {
-      "Name": "Emilia",
-      "_createdAt": "2025-05-01T12:00:00.000Z",
-      "_updatedAt": "2025-05-01T12:00:00.000Z",
-      "Series": "Re:Zero",
-      "Role": "Spirit Arts",
-      "Tier": "S"
-    },
-    {
-      "Name": "Rem",
-      "_createdAt": "2025-05-02T08:30:00.000Z",
-      "_updatedAt": "2025-05-02T08:30:00.000Z",
-      "Series": "Re:Zero",
-      "Role": "Oni Maid",
-      "Tier": "A"
-    }
-  ],
+  "version": 2,
+  "settings": {
+    "sortLeavesBy": "Creation Date",
+    "isReverse": false
+  },
   "groupConfigs": [
     {
       "name": "Series",
@@ -61,6 +16,74 @@
     {
       "name": "Tier",
       "active": false
+    }
+  ],
+  "items": [
+    {
+      "id": "char_01_lelouch",
+      "name": "Lelouch vi Britannia",
+      "createdAt": "2024-01-01T00:01:00.000Z",
+      "updatedAt": "2024-01-01T00:01:00.000Z",
+      "attributes": {
+        "Series": "Code Geass",
+        "Role": "Strategist",
+        "Tier": "S+"
+      }
+    },
+    {
+      "id": "char_02_cc",
+      "name": "C.C.",
+      "createdAt": "2024-01-02T18:45:00.000Z",
+      "updatedAt": "2024-01-02T18:45:00.000Z",
+      "attributes": {
+        "Series": "Code Geass",
+        "Role": "Immortal",
+        "Tier": "S"
+      }
+    },
+    {
+      "id": "char_03_isagi",
+      "name": "Isagi Yoichi",
+      "createdAt": "2023-03-10T14:20:00.000Z",
+      "updatedAt": "2023-03-10T14:20:00.000Z",
+      "attributes": {
+        "Series": "Blue Lock",
+        "Role": "Striker",
+        "Tier": "S"
+      }
+    },
+    {
+      "id": "char_04_bachira",
+      "name": "Bachira Meguru",
+      "createdAt": "2023-03-12T09:15:00.000Z",
+      "updatedAt": "2024-01-20T10:00:00.000Z",
+      "attributes": {
+        "Series": "Blue Lock",
+        "Role": "Dribbler",
+        "Tier": "A+"
+      }
+    },
+    {
+      "id": "char_05_emilia",
+      "name": "Emilia",
+      "createdAt": "2025-05-01T12:00:00.000Z",
+      "updatedAt": "2025-05-01T12:00:00.000Z",
+      "attributes": {
+        "Series": "Re:Zero",
+        "Role": "Spirit Arts",
+        "Tier": "S"
+      }
+    },
+    {
+      "id": "char_06_rem",
+      "name": "Rem",
+      "createdAt": "2025-05-02T08:30:00.000Z",
+      "updatedAt": "2025-05-02T08:30:00.000Z",
+      "attributes": {
+        "Series": "Re:Zero",
+        "Role": "Oni Maid",
+        "Tier": "A"
+      }
     }
   ]
 }

@@ -1,6 +1,10 @@
 # Groups data
 groups/
 
+# Python
+__pycache__/
+*.pyc
+
 # OS metadata
 .DS_Store
 Thumbs.db

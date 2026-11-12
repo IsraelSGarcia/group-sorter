@@ -639,10 +639,19 @@
                 .replace(/>/g, '&gt;');
         }
 
+        function generateId(prefix = 'item') {
+            if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+                return `${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
+            }
+            return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+        }
+
         function getUniqueCategoryValues(categoryKey) {
             const valuesSet = new Set();
             items.forEach(item => {
-                const val = item[categoryKey];
+                const val = (item.attributes && item.attributes[categoryKey] !== undefined)
+                    ? item.attributes[categoryKey]
+                    : item[categoryKey];
                 if (val !== undefined && val !== null && val !== "" && val !== "Unspecified") {
                     valuesSet.add(String(val).trim());
                 }
@@ -657,11 +666,19 @@
             const activeKeys = new Set(groupConfigs.map(g => g.name));
             const availableKeys = new Set();
             items.forEach(item => {
-                Object.keys(item).forEach(k => {
-                    if (!activeKeys.has(k) && !SYSTEM_KEYS.includes(k) && k !== 'Name' && !k.startsWith('_')) {
-                        availableKeys.add(k);
-                    }
-                });
+                if (item.attributes) {
+                    Object.keys(item.attributes).forEach(k => {
+                        if (!activeKeys.has(k) && !SYSTEM_KEYS.includes(k)) {
+                            availableKeys.add(k);
+                        }
+                    });
+                } else {
+                    Object.keys(item).forEach(k => {
+                        if (!activeKeys.has(k) && !SYSTEM_KEYS.includes(k) && k !== 'Name' && k !== 'name' && k !== 'id' && !k.startsWith('_')) {
+                            availableKeys.add(k);
+                        }
+                    });
+                }
             });
 
             dl.innerHTML = Array.from(availableKeys).sort().map(k => `<option value="${escapeHtml(k)}">`).join('');
@@ -680,22 +697,24 @@
                 return;
             }
 
-            const now = new Date();
-            const nowIso = now.toISOString();
-
-            const newItem = { 
-                Name: name,
-                _createdAt: nowIso,
-                _updatedAt: nowIso
-            };
+            const nowIso = new Date().toISOString();
+            const attributes = {};
 
             groupConfigs.forEach(config => {
                 const key = config.name;
                 const inp = document.getElementById('inp_' + key);
                 let val = inp ? inp.value.trim() : "";
-                newItem[key] = val || "Unspecified";
-                if(inp) inp.value = ''; 
+                attributes[key] = val || "Unspecified";
+                if (inp) inp.value = ''; 
             });
+
+            const newItem = { 
+                id: generateId('char'),
+                name: name,
+                createdAt: nowIso,
+                updatedAt: nowIso,
+                attributes: attributes
+            };
 
             items.push(newItem);
             nameInp.value = '';
@@ -704,9 +723,10 @@
         }
         
         function deleteItem(itemToDelete) {
-            if (!confirm(`Are you sure you want to delete "${itemToDelete.Name}"?`)) return;
+            const itemName = itemToDelete.name || itemToDelete.Name || 'Item';
+            if (!confirm(`Are you sure you want to delete "${itemName}"?`)) return;
             
-            const index = items.indexOf(itemToDelete);
+            const index = items.findIndex(i => (itemToDelete.id && i.id === itemToDelete.id) || i === itemToDelete);
             if (index > -1) {
                 items.splice(index, 1);
                 updateDynamicInputs();
@@ -718,7 +738,7 @@
         
         function openEditModal(item) {
             editingItem = item;
-            document.getElementById('editName').value = item.Name;
+            document.getElementById('editName').value = item.name || item.Name || '';
             
             const container = document.getElementById('editDynamicContainer');
             container.innerHTML = '';
@@ -727,12 +747,15 @@
                 const key = config.name;
                 const uniqueValues = getUniqueCategoryValues(key);
                 const datalistId = `edit_dl_${encodeURIComponent(key)}`;
+                const val = (item.attributes && item.attributes[key] !== undefined)
+                    ? item.attributes[key]
+                    : (item[key] || '');
 
                 const div = document.createElement('div');
                 div.className = 'input-group';
                 div.innerHTML = `
                     <label>${escapeHtml(key)}</label>
-                    <input type="text" id="edit_inp_${escapeHtml(key)}" value="${escapeHtml(item[key] || '')}" list="${datalistId}" autocomplete="off">
+                    <input type="text" id="edit_inp_${escapeHtml(key)}" value="${escapeHtml(val)}" list="${datalistId}" autocomplete="off">
                     <datalist id="${datalistId}">
                         ${uniqueValues.map(v => `<option value="${escapeHtml(v)}">`).join('')}
                     </datalist>
@@ -754,19 +777,17 @@
             const newName = document.getElementById('editName').value.trim();
             if (!newName) return alert("Name cannot be empty");
 
-            editingItem.Name = newName;
+            editingItem.name = newName;
+            if (!editingItem.attributes) editingItem.attributes = {};
 
             groupConfigs.forEach(config => {
                 const inp = document.getElementById('edit_inp_' + config.name);
                 if (inp) {
-                    editingItem[config.name] = inp.value.trim() || "Unspecified";
+                    editingItem.attributes[config.name] = inp.value.trim() || "Unspecified";
                 }
             });
 
-            const now = new Date();
-            const nowIso = now.toISOString();
-            
-            editingItem._updatedAt = nowIso;
+            editingItem.updatedAt = new Date().toISOString();
 
             closeModal();
             updateDynamicInputs();
@@ -856,15 +877,17 @@
                 const sorted = itemList.slice().sort((a, b) => {
                     let cmp = 0;
                     if (currentSort === CREATED_KEY) {
-                        const dateA = a._createdAt || a._created || "";
-                        const dateB = b._createdAt || b._created || "";
+                        const dateA = a.createdAt || a._createdAt || a._created || "";
+                        const dateB = b.createdAt || b._createdAt || b._created || "";
                         cmp = dateA.localeCompare(dateB);
                     } else if (currentSort === MODIFIED_KEY) {
-                        const dateA = a._updatedAt || a._modified || (a._createdAt || a._created || "");
-                        const dateB = b._updatedAt || b._modified || (b._createdAt || b._created || "");
+                        const dateA = a.updatedAt || a._updatedAt || a._modified || (a.createdAt || a._createdAt || a._created || "");
+                        const dateB = b.updatedAt || b._updatedAt || b._modified || (b.createdAt || b._createdAt || b._created || "");
                         cmp = dateA.localeCompare(dateB);
                     } else if (currentSort === NAME_KEY) {
-                        cmp = a.Name.localeCompare(b.Name);
+                        const nameA = a.name || a.Name || "";
+                        const nameB = b.name || b.Name || "";
+                        cmp = nameA.localeCompare(nameB);
                     }
                     
                     return isReverse ? -cmp : cmp;
@@ -879,11 +902,13 @@
             itemList.forEach(item => {
                 let value;
                 if (currentKey === CREATED_KEY) {
-                    value = formatDate(item._createdAt || item._created) || "Unspecified";
+                    value = formatDate(item.createdAt || item._createdAt || item._created) || "Unspecified";
                 } else if (currentKey === MODIFIED_KEY) {
-                    value = formatDate(item._updatedAt || item._modified || item._createdAt || item._created) || "Unspecified";
+                    value = formatDate(item.updatedAt || item._updatedAt || item._modified || item.createdAt || item._createdAt || item._created) || "Unspecified";
                 } else {
-                    value = item[currentKey] || "Unspecified";
+                    value = (item.attributes && item.attributes[currentKey] !== undefined)
+                        ? item.attributes[currentKey]
+                        : (item[currentKey] || "Unspecified");
                 }
                 if (!groups[value]) groups[value] = [];
                 groups[value].push(item);
@@ -949,11 +974,18 @@
             let displayItems = items;
             if (searchQuery) {
                 displayItems = items.filter(item => {
-                    if (item.Name && item.Name.toLowerCase().includes(searchQuery)) return true;
-                    for (const key of Object.keys(item)) {
-                        if (!key.startsWith('_') && key !== 'Name') {
-                            const val = String(item[key] || '').toLowerCase();
-                            if (val.includes(searchQuery)) return true;
+                    const itemName = item.name || item.Name || '';
+                    if (itemName.toLowerCase().includes(searchQuery)) return true;
+                    if (item.attributes) {
+                        for (const val of Object.values(item.attributes)) {
+                            if (String(val || '').toLowerCase().includes(searchQuery)) return true;
+                        }
+                    } else {
+                        for (const key of Object.keys(item)) {
+                            if (!key.startsWith('_') && key !== 'Name' && key !== 'id') {
+                                const val = String(item[key] || '').toLowerCase();
+                                if (val.includes(searchQuery)) return true;
+                            }
                         }
                     }
                     return false;
@@ -1006,13 +1038,13 @@
                     
                     const nameSpan = document.createElement('div');
                     nameSpan.className = 'item-name';
-                    nameSpan.textContent = node.Name;
+                    nameSpan.textContent = node.name || node.Name || '';
                     
                     const metaDiv = document.createElement('div');
                     metaDiv.className = 'item-meta';
                     
-                    const createdDate = formatDate(node._createdAt || node._created);
-                    const modifiedDate = formatDate(node._updatedAt || node._modified || node._createdAt || node._created);
+                    const createdDate = formatDate(node.createdAt || node._createdAt || node._created);
+                    const modifiedDate = formatDate(node.updatedAt || node._updatedAt || node._modified || node.createdAt || node._createdAt || node._created);
                     
                     metaDiv.innerHTML = `
                         <div class="date-line" title="Created: ${createdDate} | Modified: ${modifiedDate}">
@@ -1154,15 +1186,33 @@
             renderTree();
         }
 
-        // --- Import / Export ---
+        // --- Import / Export & Schema v2 ---
+
+        function serializeDataset() {
+            return {
+                version: 2,
+                settings: {
+                    sortLeavesBy: currentSort,
+                    isReverse: isReverse
+                },
+                groupConfigs: groupConfigs,
+                items: items.map(item => ({
+                    id: item.id || generateId('char'),
+                    name: item.name || item.Name || '',
+                    createdAt: item.createdAt || item._createdAt || item._created || new Date().toISOString(),
+                    updatedAt: item.updatedAt || item._updatedAt || item._modified || item.createdAt || new Date().toISOString(),
+                    attributes: item.attributes || {}
+                }))
+            };
+        }
 
         function exportData() {
-            const dataStr = JSON.stringify({ items, groupConfigs }, null, 2);
+            const dataStr = JSON.stringify(serializeDataset(), null, 2);
             const blob = new Blob([dataStr], { type: "application/json" });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = "group_sorter_data.json";
+            a.download = "group_sorter_data_v2.json";
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -1170,54 +1220,83 @@
         }
 
         function applyImportedData(data) {
-            if (data && data.items && Array.isArray(data.items)) {
-                items = data.items;
-                if (data.groupConfigs) {
-                    groupConfigs = data.groupConfigs.filter(g => !SYSTEM_KEYS.includes(g.name));
+            if (!data || !data.items || !Array.isArray(data.items)) return;
+
+            // Restore settings if present (v2 schema)
+            if (data.settings) {
+                if (data.settings.sortLeavesBy) {
+                    currentSort = data.settings.sortLeavesBy;
+                    const sortSel = document.getElementById('sortSelect');
+                    if (sortSel) sortSel.value = currentSort;
                 }
-                
-                // Normalize and patch items to standard _createdAt and _updatedAt
-                items.forEach(item => {
-                    let createdIso = item._createdAt || item.createdAt;
-                    if (!createdIso) {
-                        if (item._created) {
-                            createdIso = item._created;
-                        } else if (item[CREATED_KEY]) {
-                            const parsed = new Date(item[CREATED_KEY]);
-                            createdIso = isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
-                        } else {
-                            createdIso = new Date().toISOString();
-                        }
-                    }
-
-                    let updatedIso = item._updatedAt || item.updatedAt || item.modifiedAt;
-                    if (!updatedIso) {
-                        if (item._modified) {
-                            updatedIso = item._modified;
-                        } else if (item[MODIFIED_KEY]) {
-                            const parsed = new Date(item[MODIFIED_KEY]);
-                            updatedIso = isNaN(parsed.getTime()) ? createdIso : parsed.toISOString();
-                        } else {
-                            updatedIso = createdIso;
-                        }
-                    }
-
-                    item._createdAt = createdIso;
-                    item._updatedAt = updatedIso;
-
-                    // Clean up legacy redundant properties
-                    delete item._created;
-                    delete item._modified;
-                    delete item[CREATED_KEY];
-                    delete item[MODIFIED_KEY];
-                    delete item.createdAt;
-                    delete item.updatedAt;
-                    delete item.modifiedAt;
-                });
-
-                updateDynamicInputs();
-                renderTree();
+                if (typeof data.settings.isReverse === 'boolean') {
+                    isReverse = data.settings.isReverse;
+                    const btn = document.getElementById('sortOrderBtn');
+                    if (btn) btn.innerHTML = isReverse ? '▲' : '▼';
+                }
             }
+
+            if (data.groupConfigs && Array.isArray(data.groupConfigs)) {
+                groupConfigs = data.groupConfigs.filter(g => !SYSTEM_KEYS.includes(g.name));
+            }
+
+            // Normalize all items to standard v2 schema
+            items = data.items.map((rawItem, idx) => {
+                const name = rawItem.name || rawItem.Name || `Item ${idx + 1}`;
+
+                let createdIso = rawItem.createdAt || rawItem._createdAt || rawItem._created;
+                if (!createdIso) {
+                    if (rawItem[CREATED_KEY]) {
+                        const parsed = new Date(rawItem[CREATED_KEY]);
+                        createdIso = isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
+                    } else {
+                        createdIso = new Date().toISOString();
+                    }
+                }
+
+                let updatedIso = rawItem.updatedAt || rawItem._updatedAt || rawItem._modified || rawItem.modifiedAt;
+                if (!updatedIso) {
+                    if (rawItem[MODIFIED_KEY]) {
+                        const parsed = new Date(rawItem[MODIFIED_KEY]);
+                        updatedIso = isNaN(parsed.getTime()) ? createdIso : parsed.toISOString();
+                    } else {
+                        updatedIso = createdIso;
+                    }
+                }
+
+                const id = rawItem.id || generateId('char');
+
+                let attributes = {};
+                if (rawItem.attributes && typeof rawItem.attributes === 'object' && !Array.isArray(rawItem.attributes)) {
+                    attributes = { ...rawItem.attributes };
+                } else {
+                    const excludedKeys = new Set([
+                        'id', 'name', 'Name',
+                        'createdAt', 'updatedAt',
+                        '_createdAt', '_updatedAt',
+                        '_created', '_modified',
+                        'Creation Date', 'Modification Date',
+                        CREATED_KEY, MODIFIED_KEY,
+                        'modifiedAt'
+                    ]);
+                    for (const [k, v] of Object.entries(rawItem)) {
+                        if (!excludedKeys.has(k) && !k.startsWith('_')) {
+                            attributes[k] = v;
+                        }
+                    }
+                }
+
+                return {
+                    id,
+                    name,
+                    createdAt: createdIso,
+                    updatedAt: updatedIso,
+                    attributes
+                };
+            });
+
+            updateDynamicInputs();
+            renderTree();
         }
 
         function importData(input) {
@@ -1236,7 +1315,7 @@
 
         async function loadExample() {
             try {
-                const res = await fetch('./data/sample-template.json', { cache: 'no-cache' });
+                const res = await fetch('./data/sample-template.json?v=20261112T033000Z', { cache: 'no-cache' });
                 if (res.ok) {
                     const data = await res.json();
                     applyImportedData(data);
@@ -1244,26 +1323,25 @@
                 }
             } catch (err) {}
 
-            const createWithDate = (props, dateStr, modDateStr) => {
-                const dateObj = new Date(dateStr);
-                const modObj = modDateStr ? new Date(modDateStr) : dateObj;
-                const isoCreated = dateObj.toISOString();
-                const isoModified = modObj.toISOString();
-                
-                return { 
-                    ...props, 
-                    _createdAt: isoCreated,
-                    _updatedAt: isoModified
+            const createWithDate = (name, createdStr, modStr, attributes) => {
+                const dateObj = new Date(createdStr);
+                const modObj = modStr ? new Date(modStr) : dateObj;
+                return {
+                    id: generateId('char'),
+                    name: name,
+                    createdAt: dateObj.toISOString(),
+                    updatedAt: modObj.toISOString(),
+                    attributes: attributes
                 };
             };
 
             items = [
-                createWithDate({ Name: "Lelouch vi Britannia", Series: "Code Geass", Role: "Strategist", Tier: "S+" }, "2024-01-01T00:01:00"),
-                createWithDate({ Name: "C.C.", Series: "Code Geass", Role: "Immortal", Tier: "S" }, "2024-01-02T18:45:00"),
-                createWithDate({ Name: "Isagi Yoichi", Series: "Blue Lock", Role: "Striker", Tier: "S" }, "2023-03-10T14:20:00"),
-                createWithDate({ Name: "Bachira Meguru", Series: "Blue Lock", Role: "Dribbler", Tier: "A+" }, "2023-03-12T09:15:00", "2024-01-20T10:00:00"),
-                createWithDate({ Name: "Emilia", Series: "Re:Zero", Role: "Spirit Arts", Tier: "S" }, "2025-05-01T12:00:00"),
-                createWithDate({ Name: "Rem", Series: "Re:Zero", Role: "Oni Maid", Tier: "A" }, "2025-05-02T08:30:00")
+                createWithDate("Lelouch vi Britannia", "2024-01-01T00:01:00", null, { Series: "Code Geass", Role: "Strategist", Tier: "S+" }),
+                createWithDate("C.C.", "2024-01-02T18:45:00", null, { Series: "Code Geass", Role: "Immortal", Tier: "S" }),
+                createWithDate("Isagi Yoichi", "2023-03-10T14:20:00", null, { Series: "Blue Lock", Role: "Striker", Tier: "S" }),
+                createWithDate("Bachira Meguru", "2023-03-12T09:15:00", "2024-01-20T10:00:00", { Series: "Blue Lock", Role: "Dribbler", Tier: "A+" }),
+                createWithDate("Emilia", "2025-05-01T12:00:00", null, { Series: "Re:Zero", Role: "Spirit Arts", Tier: "S" }),
+                createWithDate("Rem", "2025-05-02T08:30:00", null, { Series: "Re:Zero", Role: "Oni Maid", Tier: "A" })
             ];
             
             groupConfigs = [
@@ -1328,8 +1406,8 @@
                     select.appendChild(opt);
                 });
 
-                // Auto-load preferred file (replica first, or first available file)
-                const preferred = files.find(f => f.filename.includes('replica')) || files[0];
+                // Auto-load preferred file (v2 first, then replica, then first available)
+                const preferred = files.find(f => f.filename.includes('v2')) || files.find(f => f.filename.includes('replica')) || files[0];
                 select.value = preferred.filename;
                 await loadGroupFile(preferred.filename);
             } catch (err) {
@@ -1366,7 +1444,7 @@
         }
 
         async function saveAsNewGroupFile() {
-            const promptName = prompt("Enter filename to save in groups/ (e.g. my-list.json):", "my-characters.json");
+            const promptName = prompt("Enter filename to save in groups/ (e.g. my-list.json):", "my-characters-v2.json");
             if (!promptName) return;
             let filename = promptName.trim();
             if (!filename.endsWith(".json")) filename += ".json";
@@ -1380,20 +1458,12 @@
             try {
                 if (saveBtn) saveBtn.textContent = 'Saving...';
 
-                const cleanItems = items.map(item => {
-                    const { _created, _modified, [CREATED_KEY]: _ck, [MODIFIED_KEY]: _mk, ...rest } = item;
-                    return rest;
-                });
-
                 const res = await fetch('/api/save', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         filename: filename,
-                        data: {
-                            items: cleanItems,
-                            groupConfigs: groupConfigs
-                        }
+                        data: serializeDataset()
                     })
                 });
 
